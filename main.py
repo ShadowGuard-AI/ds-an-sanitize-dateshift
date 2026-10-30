@@ -1,6 +1,7 @@
 import argparse
 import logging
 import random
+import sys
 import pandas as pd
 from dateutil import parser
 
@@ -45,11 +46,16 @@ def sanitize_date_column(df, column_name, min_shift, max_shift):
         if min_shift > max_shift:
             raise ValueError("min_shift must be less than or equal to max_shift.")
             
-        # Convert the column to datetime objects, handling potential parsing errors
+        # One shift for the whole column, drawn once here. The README
+        # promises preserved date relationships, and that only holds if
+        # every row moves by the same amount: drawing a fresh shift per
+        # row, as this code used to, reorders events and stretches or
+        # compresses the gaps between them at random.
+        shift = random.randint(min_shift, max_shift)
+
         def shift_date(date_str):
             try:
                 date_obj = parser.parse(date_str)
-                shift = random.randint(min_shift, max_shift)
                 return date_obj + pd.Timedelta(days=shift)
             except (ValueError, TypeError) as e:
                 logging.warning(f"Could not parse date '{date_str}': {e}. Returning original value.")
@@ -91,12 +97,16 @@ def main():
 
     except FileNotFoundError:
         logging.error(f"Input file '{args.input_file}' not found.")
+        sys.exit(1)
     except pd.errors.EmptyDataError:
         logging.error(f"Input file '{args.input_file}' is empty.")
+        sys.exit(1)
     except pd.errors.ParserError:
         logging.error(f"Error parsing input file '{args.input_file}'.  Ensure it's a valid CSV.")
+        sys.exit(1)
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
