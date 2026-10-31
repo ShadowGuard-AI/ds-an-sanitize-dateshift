@@ -2,6 +2,7 @@ import argparse
 import logging
 import random
 import sys
+from pathlib import Path
 import pandas as pd
 from dateutil import parser
 
@@ -52,19 +53,22 @@ def sanitize_date_column(df, column_name, min_shift, max_shift):
         # row, as this code used to, reorders events and stretches or
         # compresses the gaps between them at random.
         shift = random.randint(min_shift, max_shift)
+        counts = {"shifted": 0, "unshifted": 0}
 
         def shift_date(date_str):
             try:
                 date_obj = parser.parse(date_str)
+                counts["shifted"] += 1
                 return date_obj + pd.Timedelta(days=shift)
             except (ValueError, TypeError) as e:
+                counts["unshifted"] += 1
                 logging.warning(f"Could not parse date '{date_str}': {e}. Returning original value.")
                 return date_str  # Return the original value if parsing fails
 
         # Apply the date shifting function to the specified column
         df[column_name] = df[column_name].astype(str).apply(shift_date)
-        
-        return df
+
+        return df, counts["shifted"], counts["unshifted"]
 
     except ValueError as ve:
         logging.error(f"ValueError: {ve}")
@@ -83,12 +87,22 @@ def main():
     parser = setup_argparse()
     args = parser.parse_args()
 
+    if Path(args.input_file).resolve() == Path(args.output_file).resolve():
+        logging.error("Output file must not be the input file. Choose a different output file.")
+        sys.exit(1)
+
     try:
         # Read the input CSV file into a DataFrame
         df = pd.read_csv(args.input_file)
 
         # Sanitize the date column
-        sanitized_df = sanitize_date_column(df, args.column_name, args.min_shift, args.max_shift)
+        sanitized_df, shifted_count, unshifted_count = sanitize_date_column(df, args.column_name, args.min_shift, args.max_shift)
+
+        logging.info(f"Dates shifted: {shifted_count}. Dates not shifted: {unshifted_count}.")
+
+        if shifted_count == 0:
+            logging.error("No dates were shifted: no value in the named column could be parsed and shifted. No output file was written.")
+            sys.exit(1)
 
         # Write the sanitized DataFrame to the output CSV file
         sanitized_df.to_csv(args.output_file, index=False)
