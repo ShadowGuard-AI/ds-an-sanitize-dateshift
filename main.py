@@ -52,15 +52,28 @@ def sanitize_date_column(df, column_name, min_shift, max_shift):
         # every row moves by the same amount: drawing a fresh shift per
         # row, as this code used to, reorders events and stretches or
         # compresses the gaps between them at random.
+        # The draw is unseeded and there is no seed option, so no run can
+        # be repeated. The range may also include zero: a zero draw is
+        # counted as shifted for every row below even though nothing moved.
         shift = random.randint(min_shift, max_shift)
         counts = {"shifted": 0, "unshifted": 0}
 
         def shift_date(date_str):
             try:
+                # dateutil reads almost anything: a bare year parses, and
+                # a slash date is read month first, so 01/02/2023 is
+                # January 2 here whether or not the file meant February 1.
+                # What comes back is a pandas Timestamp, so a date that
+                # went in as 2023-01-15 comes out as 2023-01-15 00:00:00:
+                # the value shifts and the format changes with it.
                 date_obj = parser.parse(date_str)
                 counts["shifted"] += 1
                 return date_obj + pd.Timedelta(days=shift)
             except (ValueError, TypeError) as e:
+                # A value that will not parse is carried into the output
+                # exactly as it was, and the run still succeeds if any
+                # other row shifted. The unshifted count in the log is the
+                # only place that leak shows up.
                 counts["unshifted"] += 1
                 logging.warning(f"Could not parse date '{date_str}': {e}. Returning original value.")
                 return date_str  # Return the original value if parsing fails
